@@ -1,0 +1,377 @@
+---
+title: "AFA Tables & Figures"
+#author: "Magali Blanco"
+#date: "10/20/2017"
+output: word_document
+---
+Note, this is a copy of the "Dylos Manuscript" Markdown script in the Thesis R Project
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, include=F, warning = F)
+library(ggplot2)
+library(readr)
+library(readxl)
+library(plotly)
+library(plyr)
+library(reshape2)
+library(zoo)
+library(clipr)  #copy to clipboard fn
+library(scales)
+library(gridExtra)
+library(grid)
+library(quantreg)
+library(knitr)
+library(data.table)
+library(broom) #extract lm output into dataframe; get lower/upper bounds in qr (fns: tidy(), augment(), glance())
+
+```
+ 
+```{r fn: GM, GSD}
+gm<-function(x){
+    rslt<-exp(mean(log(x))) 
+    return(rslt)
+    }
+
+gsd<-function(x){
+    rslt<-exp(sqrt(var(log(x))))
+    #same: rslt <- exp(sd(log(x))) 
+    return(rslt)
+    }
+
+
+#? gsd = 
+```
+
+```{r fn: multiplot()}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+```
+
+```{r fn: summary.fn}
+summary.fn <- function(df){
+  #df <- grav
+  summary1 <- data.frame(Min = min(df),
+                       Q1 = round(quantile(df, 0.25)[[1]],1),
+                       Median= round(quantile(df, 0.5)[[1]],1),
+                       Mean= round(mean(df), 1),
+                       Q3 = round(quantile(df, 0.75)[[1]],1),
+                       Max = round(max(df),1)) 
+kable(summary1)
+  }
+```
+
+```{r fn: PMC.Dist}
+PMC.Dist <- function(ht){
+#ht <- "Above"
+unique.dist <- sort(unique(AFAevents$Near_Dist_ft))
+
+table1 <- data.frame(Near_Dist_ft = unique.dist,
+                     Mid_Dist_ft = sort(unique(AFAevents$Mid_Dist_ft)),
+                     Samples = rep(NA, length(unique.dist)),
+                     Mean = rep(NA, length(unique.dist)),
+                     Median = rep(NA, length(unique.dist)),
+                     SD = rep(NA, length(unique.dist)),
+                     Min = rep(NA, length(unique.dist)),
+                     Max = rep(NA, length(unique.dist)))
+
+for (i in 1: length(unique.dist)) {
+ df <- subset(AFAevents[AFAevents$Height== ht, c("PMCperMin", "Near_Dist_ft")], Near_Dist_ft==unique.dist[i]) 
+ 
+ table1$Samples[i] <- length(df$PMCperMin)
+ table1$Mean[i] <- round(mean(df$PMCperMin))
+ table1$Median[i] <- round(median(df$PMCperMin))
+ table1$SD[i] <- round(sd(df$PMCperMin))
+ table1$Min[i] <- round(min(df$PMCperMin))
+ table1$Max[i] <- round(max(df$PMCperMin))
+ 
+}
+kable(table1)
+}
+```
+
+```{r fn: table PMC.Dist.Cat}
+PMC.Dist.Cat <- function(ht, cat){
+#ht <- "Above"
+#cat <- "Near_Dist_Cat_m"
+
+# - add control
+#unique.dist <- sort(unique(AFAevents[!is.na(cat),cat]))
+unique.dist <- sort(unique(AFAevents[,cat]))
+#unique.dist[4] <- "Control"
+
+table1 <- data.frame(Dist_Cat = unique.dist,
+                     Samples = rep(NA, length(unique.dist)),
+                     AM = rep(NA, length(unique.dist)),
+                     ASD = rep(NA, length(unique.dist)),
+                     GM = rep(NA, length(unique.dist)),
+                     GSD = rep(NA, length(unique.dist)))
+
+for (i in 1: length(unique.dist)) {
+ df <- subset(AFAevents, Height== ht & AFAevents[,cat]==unique.dist[i]) 
+ #df0 <- AFAevents[AFAevents$cat ==unique.dist[1],]
+  #df <- AFAevents[AFAevents$Height== ht & AFAevents$cat==unique.dist[i],]
+  
+ table1$Samples[i] <- length(df$PMCperMin)
+ table1$AM[i] <- round(mean(df$PMCperMin),1)
+ table1$ASD[i] <- round(sd(df$PMCperMin),1)
+ table1$GM[i] <-  round(gm(df$PMCperMin),1)
+ table1$GSD[i] <- round(gsd(df$PMCperMin),1)  
+ 
+}
+table1
+#kable(table1)
+}
+```
+ 
+```{r Data_Setup}
+#setwd("/Users/magaliblanco/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R")
+
+dylos_met <- read_csv("~/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R/Output/dylos_met_dataset_ 2017-10-20 .csv")
+dylos_met$Date_Time <- as.POSIXct(dylos_met$Date_Time, format = "%m/%d/%y %H:%M") # %I:%M %p")
+dylos_met$Date <- as.POSIXct(dylos_met$Date, format = "%m/%d/%y")
+dylos_met$Sprayer <- as.factor(dylos_met$Sprayer)
+
+dylos_met$Sprayer <- relevel(dylos_met$Sprayer, "Control")
+dylos_met$Distance_category[dylos_met$Distance_category=="C"] <- "Control"
+
+#dylos.dt <- as.data.table(dylos_met) 
+
+AFAdata <- dylos_met[dylos_met$Sprayer!="MFT",]   
+
+#create spray "events"
+AFAdata$Event <- ifelse(AFAdata$Day==2 & AFAdata$Quadrant==3, 0, ifelse(AFAdata$Day==2 & AFAdata$Quadrant==4, 1, ifelse(AFAdata$Day==2 & AFAdata$Quadrant==2, 2, ifelse(AFAdata$Day==2 & AFAdata$Quadrant==1, 3, ifelse(AFAdata$Day==3 & AFAdata$Quadrant==2, 4, ifelse(AFAdata$Day==3 & AFAdata$Quadrant==1, 5, ifelse(AFAdata$Day==3 & AFAdata$Quadrant==3, 6, ifelse(AFAdata$Day==3 & AFAdata$Quadrant==4, 7, ifelse(AFAdata$Day==4 & AFAdata$Quadrant==1, 8,ifelse(AFAdata$Day==4 & AFAdata$Quadrant==3, 9, ifelse(AFAdata$Day==4 & AFAdata$Quadrant==4, 10, ifelse(AFAdata$Day==4 & AFAdata$Quadrant==2, 11, ifelse(AFAdata$Day==5 & AFAdata$Quadrant==2, 12, ifelse(AFAdata$Day==5 & AFAdata$Quadrant==1,13, ifelse(AFAdata$Day==5 & AFAdata$Quadrant==4, 14, ifelse(AFAdata$Day==5 & AFAdata$Quadrant==3, 15, "Control")))))))))))))))) 
+
+AFAevents <- aggregate(data=AFAdata, cbind(adj0.5, adj1.0, adj2.5, adj10.0, mass0.5, mass1.0, mass2.5, mass10.0, mass_sum)~ Date+ Event+ Quadrant+  Height+Location, sum)
+
+colnames(AFAevents) <-c("Date", "Event", "Quadrant", "Height", "Location", "PNC_bin0.5", "PNC_bin1.0", "PNC_bin2.5", "PNC_bin10.0", "PMC_bin0.5", "PMC_bin1.0", "PMC_bin2.5", "PMC_bin10.0", "Event_PMC")
+
+#calculate min/max times for each spray event
+time.diff <- data.frame(Event=seq(1:15),
+                        Mins= c(5,6,6,8,8,7,6,8,7,7,6,8,6,7,6))
+
+#import static distances
+dist <- read_excel("~/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R/Datasets/distances.xlsx")
+dist$Near_Dist_m <- dist$Near_Dist_ft*0.3048
+#dist$Mid_Dist_m <- dist$Mid_Dist_ft*0.3048
+dist <- dist[c("Quadrant", "Location", "Horizontal", "Near_Dist_ft",  "Near_Dist_m")] #"Mid_Dist_ft", "Mid_Dist_m"
+ dist <- dist[!is.na(dist$Quadrant),]
+
+#merge w/ minutes/event & static distances
+AFAevents <- merge(merge(AFAevents, time.diff, by="Event", all.x=T), dist, all.x = T) 
+
+#add avg wind spd data
+AFA_Wind <- aggregate(data=AFAdata, cbind(Wind_Spd_ms, Wind_Spd_MPH,Wind_Dir_deg) ~ Date+ Event+ Quadrant+  Height+Location, mean)
+
+colnames(AFA_Wind)<- c("Date", "Event", "Quadrant", "Height", "Location", "Avg_WS_ms", "Avg_WS_mph", "Avg_WD_deg")
+
+AFAevents <- merge(AFAevents, AFA_Wind, by=c("Date", "Event", "Quadrant", "Height", "Location"))
+
+#in/out AEZ?
+AFAevents$Near_AEZ <- ifelse(AFAevents$Near_Dist_ft <=100, "Inside", "Outside")
+
+#estimate control times
+AFAevents$Mins[AFAevents$Event =="Control" &  AFAevents$Date== "2016-06-10"] <- length(AFAdata$Date_Time[AFAdata$Event=="Control" & AFAdata$Day==2  & AFAdata$Sampler=="A1"])
+
+AFAevents$Mins[AFAevents$Event =="Control" &  AFAevents$Date== "2016-09-28"] <- length(AFAdata$Date_Time[AFAdata$Event=="Control" & AFAdata$Day==3  & AFAdata$Sampler=="A1"])
+
+AFAevents$Mins[AFAevents$Event =="Control" &  AFAevents$Date== "2016-09-29"] <- length(AFAdata$Date_Time[AFAdata$Event=="Control" & AFAdata$Day==4  & AFAdata$Sampler=="A1"])
+
+AFAevents$Mins[AFAevents$Event =="Control" &  AFAevents$Date== "2016-09-30"] <- length(AFAdata$Date_Time[AFAdata$Event=="Control" & AFAdata$Day==5  & AFAdata$Sampler=="A1"])
+
+#colnames(AFAevents)[colnames(AFAevents)=="mass_sum"] <- "Event_PMC"
+AFAevents$PMCperMin <- AFAevents$Event_PMC / AFAevents$Mins
+
+AFAevents$Sprayer <- ifelse(AFAevents$Event=="Control", "Control", "AFA")
+
+#AFAevents2 <- AFAevents
+AFAevents <- AFAevents[c("Date", "Event", "Quadrant", "Height", "Location", "Horizontal", "Near_Dist_m",  "Near_AEZ","PNC_bin0.5", "PNC_bin1.0", "PNC_bin2.5", "PNC_bin10.0", "PMC_bin0.5", "PMC_bin1.0", "PMC_bin2.5", "PMC_bin10.0", "Event_PMC", "Mins", "PMCperMin", "Avg_WS_ms", "Avg_WS_mph", "Sprayer")] #"Mid_Dist_m",
+
+AFAevents$Near_Dist_Cat_m <- ifelse(AFAevents$Near_Dist_m <=33, 33, ifelse(AFAevents$Near_Dist_m >33 & AFAevents$Near_Dist_m <=53, 53,ifelse(AFAevents$Near_Dist_m >53, round(max(dist$Near_Dist_m)), 90)))
+
+AFAevents[is.na(AFAevents$Near_Dist_Cat_m), "Near_Dist_Cat_m"] <- "Control"
+AFAevents$Near_Dist_Cat_m <- as.factor(AFAevents$Near_Dist_Cat_m)
+AFAevents$Near_Dist_Cat_m <- relevel(AFAevents$Near_Dist_Cat_m, "Control")
+
+#add AgWeather Net Wind Speed data
+AgWeather_WS <- read_excel("~/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R/Datasets/AgWeather WS.xlsx")
+AgWeather_WS <- AgWeather_WS[!is.na(AgWeather_WS$Event) & AgWeather_WS$Event !=0, c("InitialWS_mph", "Event")]
+AgWeather_WS <- AgWeather_WS[c("Event", "InitialWS_mph")]
+AgWeather_WS[length(AgWeather_WS$Event)+1 ,"InitialWS_mph"] <- round(mean(AFAevents$Avg_WS_mph[AFAevents$Event=="Control"]),1)
+AgWeather_WS[is.na(AgWeather_WS$Event), "Event"] <- "Control"
+
+
+#merge initial wind w/ AFA event data
+AFAevents <- merge(AFAevents, AgWeather_WS, by="Event", all.x=T)
+AFAevents$Event <- as.factor(AFAevents$Event)
+AFAevents$Height <- as.factor(AFAevents$Height)
+AFAevents$Sprayer <- as.factor(AFAevents$Sprayer)
+AFAevents$Sprayer <- relevel(AFAevents$Sprayer, "Control")
+
+#merge AFA minute data w/ initial wind , by "event", all.x=T
+AFAdata <- merge(AFAdata, AgWeather_WS, by="Event", all.x=T)
+
+#merge AFA minute data w/ near distance, by "event", all.x=T
+# !! using "unique" b/c we were having a merging error before (multiplies AFAdata set by 7-8x)
+AFAdata <- unique(merge(AFAdata, AFAevents[c("Quadrant", "Location", "Event", "Near_Dist_Cat_m",  "Near_Dist_m")], by=c("Quadrant", "Location", "Event"))) #, all.x=T) #"Mid_Dist_Cat_m", "Mid_Dist_m"
+
+#write.csv(AFAevents, paste("Output/Manuscript/Events/SprayEvents__.csv"))
+```
+
+# Spray Diagram 
+
+# T1. PMC over Near Distance Category - above & below canopy
+control N = (4dy * 5 samplers/ht/dy) - (2 samplers: B, D on 9/29) = X samplers/ht
+```{r, include=T}
+PMC.Dist.Cat("Above", "Near_Dist_Cat_m")
+PMC.Dist.Cat("Below", "Near_Dist_Cat_m")
+
+```
+
+number of one-minute readings: spraying & control periods
+```{r}
+length(AFAdata$Sprayer[AFAdata$Sprayer=="AFA"]) #1028
+length(AFAdata$Sprayer[AFAdata$Sprayer=="AFA" & AFAdata$Height=="Above"]) #493
+length(AFAdata$Sprayer[AFAdata$Sprayer=="AFA" & AFAdata$Height=="Below"]) #535
+length(AFAdata$Sprayer[AFAdata$Sprayer=="Control"]) #849
+length(AFAdata$Sprayer[AFAdata$Sprayer=="Control" & AFAdata$Height=="Below"]) #445
+length(AFAdata$Sprayer[AFAdata$Sprayer=="Control" & AFAdata$Height=="Above"]) #404
+```
+
+# F1: PMC above & below over distance
+```{r, include=F}
+#black & white figure
+ggplot(data=AFAevents, aes(x=Near_Dist_Cat_m, y=PMCperMin, fill=Height)) + geom_boxplot() + labs(x= "Sampler Distance (m)", y= expression("PMC (" *mu~"g/"~m^3*")")) + theme_bw() + theme(legend.position = "bottom") + scale_y_log10() + scale_x_discrete(labels=c("Control" = "Control", "33" = "16 - 33", "53" = "34 - 53", "74" = "54 - 74")) + scale_fill_manual(name="", breaks=c("Above", "Below"),
+labels=c("Above the Canopy", "Below the Canopy"), values = c("grey", "grey50"))
+
+ggsave("/Users/magaliblanco/Everything/School/PhD_UW/Funding & Admissions/RA/2017-2018/Dylos Manuscript/Images/F1.PMC_above_below_BW.png", width = 5, height = 4)
+
+#same figure in color 
+ggplot(data=AFAevents, aes(x=Near_Dist_Cat_m, y=PMCperMin, fill=Height)) + geom_boxplot() + labs(x= "Sampler Distance (m)", y= expression("PMC (" *mu~"g/"~m^3*")")) + theme(legend.position = "bottom") + scale_y_log10() + scale_x_discrete(labels=c("Control" = "Control", "33" = "16 - 33", "53" = "34 - 53", "74" = "54 - 74")) + scale_fill_manual(name="", breaks=c("Above", "Below"),
+labels=c("Above the Canopy", "Below the Canopy"), values = c("#F8766D", "#7CAE00"))
+
+ggsave("/Users/magaliblanco/Everything/School/PhD_UW/Funding & Admissions/RA/2017-2018/Dylos Manuscript/Images/F1.PMC_above_below_color.png", width = 5, height = 4)
+
+```
+
+#T2. Wind Speed summary
+Summary of wind speed overall (MPH)
+```{r, include=F}
+summary.fn(AgWeather_WS$InitialWS_mph) 
+summary.fn(AgWeather_WS$InitialWS_mph*0.44704) #convert MPH to m/s 
+```
+
+
+# Regression
+## T3a. Full
+75th quantile regression using minute data for: PMC & wind speed
+```{r}
+a1 <- rq(mass_sum~ Sprayer + Height + Wind_Spd_ms, tau=0.75, data=AFAdata)
+
+#using data from all spray periods, not by event (mass_sum, minute WS)
+Full_Fit <- tidy(rq(mass_sum~ Sprayer + Height + Wind_Spd_ms, tau=0.75, data=AFAdata))
+#write_clip(Full_Fit)
+```
+
+##Restricted Analysis
+-static distances
+```{r}
+Dist_Fit <- tidy(rq(mass_sum~ Height + Wind_Spd_ms + Near_Dist_m  , tau=0.75, data=AFAdata)) #+ Location
+#write_clip(Dist_Fit)
+
+```
+
+
+
+============
+# Additional Figures
+PMC per location 
+- there is no clear differences in PMCs between locations
+```{r, include=T}
+#AFAevents$Near_Dist_m <- round(AFAevents$Near_Dist_m,1)
+ggplot(data=AFAevents[AFAevents$Sprayer=="AFA",], aes(x=Location, y=PMCperMin)) + geom_boxplot() + scale_y_log10()
+
+
+```
+
+PMC over distance 
+- we see increasing/decreasing PMCs over distnace  
+(NA = control periods)
+```{r, include=T}
+ggplot(data=AFAevents, aes(x=as.factor(Near_Dist_m), y=PMCperMin)) + geom_boxplot() + scale_y_log10()
+
+```
+
+PMC over distance, by location
+-we see decresing PMCs with increasing distances for Each location
+```{r, include=T}
+ggplot(data=AFAevents, aes(x=as.factor(Near_Dist_m), y=PMCperMin, fill=Location)) + geom_boxplot() + scale_y_log10()
+
+ggplot(data=AFAevents, aes(x=as.factor(Near_Dist_m), y=PMCperMin, fill=Horizontal)) + geom_boxplot() + scale_y_log10()
+
+```
+
+PMCs with increasing wind
+-looking at spray periods, we see increasing PMCs up to around 4m/s then PMCs slightly decrease  
+
+```{r, include=T}
+ggplot(data=AFAdata[AFAdata$Sprayer=="AFA",], aes(x=as.factor(round(Wind_Spd_ms)), y=mass_sum)) + geom_boxplot() + scale_y_log10() #+ ylim(0,200)
+
+```
+
+-we see the same thing looking at the control periods
+```{r, include=T}
+# ggplot(data=AFAdata[AFAdata$Sprayer=="AFA",], aes(x=as.factor(round(Wind_Spd_ms)), y=mass_sum, fill=Height)) + geom_boxplot() + scale_y_log10()
+
+ggplot(data=AFAdata[AFAdata$Sprayer=="Control",], aes(x=as.factor(round(Wind_Spd_ms)), y=mass_sum)) + geom_boxplot() + scale_y_log10()
+
+# observations/ wind speed
+#table(round(AFAdata$Wind_Spd_ms[AFAdata$Sprayer=="AFA"]))
+#table(round(AFAdata$Wind_Spd_ms[AFAdata$Sprayer=="Control"]))
+
+
+```
+
