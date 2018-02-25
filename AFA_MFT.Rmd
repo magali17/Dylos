@@ -1,0 +1,735 @@
+---
+title: "AFA_MFT"
+author: "Magali Blanco"
+date: "2/24/2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(ggplot2)
+library(broom) #extract lm output into dataframe; get lower/upper bounds in qr (fns: tidy(), augment(), glance())
+
+```
+
+alternative data setup, from original data
+```{r}
+###################### READ IN DATASET ####################
+###########################################################
+#imports
+# library(ggplot2)
+library(plotly)
+library(plyr)
+library(reshape2)
+library(zoo)
+
+library(scales)
+library(gridExtra)
+library(grid)
+
+#setwd("/Users/magaliblanco/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R")
+setwd("/Users/magaliblanco/Everything/School/PhD_UW/Funding & Admissions/RA/2017-2018/Dylos Manuscripts")
+
+######################## SET UP JUNE DATA ################
+###########################################################
+june <-read.csv("Datasets/dylos Data_jun.csv", header =TRUE)
+june$Date <- as.Date(june$Date,"%m/%d/%y")  
+# !! ignore date assigned in front of "Time" 
+june$Time <- as.POSIXct(june$Time, format = "%I:%M %p")
+june$Date_Time <- as.POSIXct(june$Date_Time, format = "%m/%d/%y %I:%M %p")
+
+#only use day 2 of june data
+june <- subset(june, Date == "2016-06-10")
+
+#calculate counts per ft3
+june$All_count0.5 <-june$X.0.5_.01ft3*100
+june$All_count1.0 <-june$X.1_.01ft3*100
+june$All_count2.5 <-june$X.2.5_.01ft3*100
+june$All_count10.0 <-june$X.10_.01ft3*100
+
+june$All0.5cm3 <- june$All_count0.5/28317
+june$All1.0cm3 <- june$All_count1.0/28317
+june$All2.5cm3 <- june$All_count2.5/28317
+june$All10.0cm3 <- june$All_count10.0/28317
+
+
+#assign sprayer by time
+AFA <- (june$Date_Time >= "2016-06-10 10:44" & june$Date_Time <= "2016-06-10 10:50") |
+  (june$Date_Time >= "2016-06-10 11:01" & june$Date_Time <= "2016-06-10 11:07") |
+  (june$Date_Time >= "2016-06-10 11:16" & june$Date_Time <= "2016-06-10 11:22") |
+  (june$Date_Time >= "2016-06-10 11:42" & june$Date_Time <= "2016-06-10 11:48") 
+june[AFA, "Sprayer"] <- "AFA"
+
+MFT <- (june$Date_Time >= "2016-06-10 10:51" & june$Date_Time <= "2016-06-10 10:58") |
+  (june$Date_Time >= "2016-06-10 11:07" & june$Date_Time <= "2016-06-10 11:15") |
+  (june$Date_Time >= "2016-06-10 11:34" & june$Date_Time <= "2016-06-10 11:41") |
+  (june$Date_Time >= "2016-06-10 12:00" & june$Date_Time <= "2016-06-10 12:08") 
+june[MFT, "Sprayer"] <- "MFT"
+
+june[,"Sprayer"][is.na(june["Sprayer"])] <- "None"
+
+#assign quadrant by time
+Q4 <- (june$Date_Time >= "2016-06-10 11:01" & june$Date_Time <= "2016-06-10 11:06") |
+  (june$Date_Time >= "2016-06-10 11:07" & june$Date_Time <= "2016-06-10 11:15")
+june[Q4, "Quadrant"] <- "4"
+
+Q3 <-(june$Date_Time >= "2016-06-10 10:44" & june$Date_Time <= "2016-06-10 10:50") |
+  (june$Date_Time >= "2016-06-10 10:51" & june$Date_Time <= "2016-06-10 10:58")
+june[Q3, "Quadrant"] <- "3"
+
+Q2 <- (june$Date_Time >= "2016-06-10 11:16" & june$Date_Time <= "2016-06-10 11:22") |
+  (june$Date_Time >= "2016-06-10 11:34" & june$Date_Time <= "2016-06-10 11:41")
+june[Q2, "Quadrant"] <- "2"
+
+Q1 <- (june$Date_Time >= "2016-06-10 11:42" & june$Date_Time <= "2016-06-10 11:48") |
+  (june$Date_Time >= "2016-06-10 12:00" & june$Date_Time <= "2016-06-10 12:08")
+june[Q1, "Quadrant"] <- "1"
+
+june[,"Quadrant"][is.na(june["Quadrant"])] <- "None"
+
+alljune <- june
+
+samplerF <- subset(june, Sampler =="F2")
+samplerF$All0.5cm3 <- samplerF$All_count0.5/28317
+samplerF$All1.0cm3 <- samplerF$All_count1.0/28317
+samplerF$All2.5cm3 <- samplerF$All_count2.5/28317
+samplerF$All10.0cm3 <- samplerF$All_count10.0/28317
+
+# delete pre/post 35 min
+june <- subset(june, Date_Time >= "2016-06-10 10:29" & Date_Time <= "2016-06-10 12:23")
+
+######################## SET UP SEPTEMBER DATA ################
+###############################################################
+sept <-read.csv("Datasets/Dylos Data_sept.csv", header =TRUE)
+### set up data from september
+sept$Date <- as.Date(sept$Date,"%m/%d/%y")
+# !! ignore date assigned in front of "Time"
+sept$Time <- as.POSIXct(sept$Time, format = "%I:%M %p")
+sept$Date_Time <- as.POSIXct(sept$Date_Time, format = "%m/%d/%y %I:%M %p")
+
+colnames(sept)[colnames(sept) == "X0.5"] <- "X.0.5_.01ft3"
+colnames(sept)[colnames(sept) == "X1"] <- "X.1_.01ft3"
+colnames(sept)[colnames(sept) == "X2.5"] <- "X.2.5_.01ft3"
+colnames(sept)[colnames(sept) == "X10"] <- "X.10_.01ft3"
+
+sept$All_count0.5 <-sept$X.0.5_.01ft3*100
+sept$All_count1.0 <-sept$X.1_.01ft3*100
+sept$All_count2.5 <-sept$X.2.5_.01ft3*100
+sept$All_count10.0 <-sept$X.10_.01ft3*100
+
+#added these 4 col 10/26/17
+sept$All0.5cm3 <- sept$All_count0.5/28317
+sept$All1.0cm3 <- sept$All_count1.0/28317
+sept$All2.5cm3 <- sept$All_count2.5/28317
+sept$All10.0cm3 <- sept$All_count10.0/28317
+
+#assign sprayer by time
+AFA <-(sept$Date_Time >= "2016-09-28 10:08" & sept$Date_Time <= "2016-09-28 10:16") |
+  (sept$Date_Time >= "2016-09-28 09:34" & sept$Date_Time <= "2016-09-28 09:42") |
+  (sept$Date_Time >= "2016-09-28 10:40" & sept$Date_Time <= "2016-09-28 10:47") |
+  (sept$Date_Time >= "2016-09-28 11:09" & sept$Date_Time <= "2016-09-28 11:15") |
+  (sept$Date_Time >= "2016-09-29 09:14" & sept$Date_Time <= "2016-09-29 09:22") |
+  (sept$Date_Time >= "2016-09-29 09:42" & sept$Date_Time <= "2016-09-29 09:49") |
+  (sept$Date_Time >= "2016-09-29 10:09" & sept$Date_Time <= "2016-09-29 10:16") |
+  (sept$Date_Time >= "2016-09-29 10:36" & sept$Date_Time <= "2016-09-29 10:42") |
+  (sept$Date_Time >= "2016-09-30 08:28" & sept$Date_Time <= "2016-09-30 08:36") |
+  (sept$Date_Time >= "2016-09-30 08:59" & sept$Date_Time <= "2016-09-30 09:05") |
+  (sept$Date_Time >= "2016-09-30 09:26" & sept$Date_Time <= "2016-09-30 09:33") |
+  (sept$Date_Time >= "2016-09-30 09:52" & sept$Date_Time <= "2016-09-30 09:58")
+
+sept[AFA, "Sprayer"] <- "AFA"
+
+MFT <-(sept$Date_Time >= "2016-09-28 10:29" & sept$Date_Time <= "2016-09-28 10:37") |
+  (sept$Date_Time >= "2016-09-28 09:55" & sept$Date_Time <= "2016-09-28 10:05") |
+  (sept$Date_Time >= "2016-09-28 10:59" & sept$Date_Time <= "2016-09-28 11:07") |
+  (sept$Date_Time >= "2016-09-28 11:26" & sept$Date_Time <= "2016-09-28 11:35") |
+  (sept$Date_Time >= "2016-09-29 09:04" & sept$Date_Time <= "2016-09-29 09:11") |
+  (sept$Date_Time >= "2016-09-29 09:34" & sept$Date_Time <= "2016-09-29 09:40") |
+  (sept$Date_Time >= "2016-09-29 10:00" & sept$Date_Time <= "2016-09-29 10:08") |
+  (sept$Date_Time >= "2016-09-29 10:27" & sept$Date_Time <= "2016-09-29 10:35") |
+  (sept$Date_Time >= "2016-09-30 08:20" & sept$Date_Time <= "2016-09-30 08:26") |
+  (sept$Date_Time >= "2016-09-30 08:49" & sept$Date_Time <= "2016-09-30 08:56") |
+  (sept$Date_Time >= "2016-09-30 09:17" & sept$Date_Time <= "2016-09-30 09:24") |
+  (sept$Date_Time >= "2016-09-30 09:44" & sept$Date_Time <= "2016-09-30 09:49")
+sept[MFT, "Sprayer"] <- "MFT"
+
+Turbo <-(sept$Date_Time >= "2016-09-28 09:44" & sept$Date_Time <= "2016-09-28 09:51") |
+  (sept$Date_Time >= "2016-09-28 10:18" & sept$Date_Time <= "2016-09-28 10:25") |
+  (sept$Date_Time >= "2016-09-28 10:49" & sept$Date_Time <= "2016-09-28 10:56") |
+  (sept$Date_Time >= "2016-09-28 11:17" & sept$Date_Time <= "2016-09-28 11:24") |
+  (sept$Date_Time >= "2016-09-29 08:51" & sept$Date_Time <= "2016-09-29 08:58") |
+  (sept$Date_Time >= "2016-09-29 09:24" & sept$Date_Time <= "2016-09-29 09:31") |
+  (sept$Date_Time >= "2016-09-29 09:51" & sept$Date_Time <= "2016-09-29 09:58") |
+  (sept$Date_Time >= "2016-09-29 10:18" & sept$Date_Time <= "2016-09-29 10:25") |
+  
+  (sept$Date_Time >= "2016-09-30 08:38" & sept$Date_Time <= "2016-09-30 08:45") |
+  (sept$Date_Time >= "2016-09-30 09:07" & sept$Date_Time <= "2016-09-30 09:14") |
+  (sept$Date_Time >= "2016-09-30 09:34" & sept$Date_Time <= "2016-09-30 09:41") |
+  (sept$Date_Time >= "2016-09-30 10:00" & sept$Date_Time <= "2016-09-30 10:07")
+sept[Turbo, "Sprayer"] <- "Turbo"
+
+sept[,"Sprayer"][is.na(sept["Sprayer"])] <- "None"
+
+#assign quadrant by time
+Q1 <-(sept$Date_Time >= "2016-09-28 10:08" & sept$Date_Time <= "2016-09-28 10:16") |
+  (sept$Date_Time >= "2016-09-28 10:29" & sept$Date_Time <= "2016-09-28 10:37") |
+  (sept$Date_Time >= "2016-09-28 10:18" & sept$Date_Time <= "2016-09-28 10:25") |
+  (sept$Date_Time >= "2016-09-29 09:14" & sept$Date_Time <= "2016-09-29 09:22") |
+  (sept$Date_Time >= "2016-09-29 09:04" & sept$Date_Time <= "2016-09-29 09:11") |
+  (sept$Date_Time >= "2016-09-29 08:51" & sept$Date_Time <= "2016-09-29 08:58") |
+  (sept$Date_Time >= "2016-09-30 08:59" & sept$Date_Time <= "2016-09-30 09:05") |
+  (sept$Date_Time >= "2016-09-30 08:49" & sept$Date_Time <= "2016-09-30 08:56") |
+  (sept$Date_Time >= "2016-09-30 09:07" & sept$Date_Time <= "2016-09-30 09:14")
+sept[Q1, "Quadrant"] <- "1"
+
+Q2 <-(sept$Date_Time >= "2016-09-28 09:34" & sept$Date_Time <= "2016-09-28 09:42") |
+  (sept$Date_Time >= "2016-09-28 09:55" & sept$Date_Time <= "2016-09-28 10:05") |
+  (sept$Date_Time >= "2016-09-28 09:44" & sept$Date_Time <= "2016-09-28 09:51") |
+  (sept$Date_Time >= "2016-09-29 10:36" & sept$Date_Time <= "2016-09-29 10:42") |
+  (sept$Date_Time >= "2016-09-29 10:27" & sept$Date_Time <= "2016-09-29 10:35") |
+  (sept$Date_Time >= "2016-09-29 10:18" & sept$Date_Time <= "2016-09-29 10:25") |
+  (sept$Date_Time >= "2016-09-30 08:28" & sept$Date_Time <= "2016-09-30 08:36") |
+  (sept$Date_Time >= "2016-09-30 08:20" & sept$Date_Time <= "2016-09-30 08:26") |
+  (sept$Date_Time >= "2016-09-30 08:38" & sept$Date_Time <= "2016-09-30 08:45")
+sept[Q2, "Quadrant"] <- "2"
+
+Q3 <-(sept$Date_Time >= "2016-09-28 10:40" & sept$Date_Time <= "2016-09-28 10:47") |
+  (sept$Date_Time >= "2016-09-28 10:59" & sept$Date_Time <= "2016-09-28 11:07") |
+  (sept$Date_Time >= "2016-09-28 10:49" & sept$Date_Time <= "2016-09-28 10:56") |
+  (sept$Date_Time >= "2016-09-29 09:42" & sept$Date_Time <= "2016-09-29 09:49") |
+  (sept$Date_Time >= "2016-09-29 09:34" & sept$Date_Time <= "2016-09-29 09:40") |
+  (sept$Date_Time >= "2016-09-29 09:24" & sept$Date_Time <= "2016-09-29 09:31") |
+  (sept$Date_Time >= "2016-09-30 09:52" & sept$Date_Time <= "2016-09-30 09:58") |
+  (sept$Date_Time >= "2016-09-30 09:44" & sept$Date_Time <= "2016-09-30 09:49") |
+  (sept$Date_Time >= "2016-09-30 10:00" & sept$Date_Time <= "2016-09-30 10:07")
+  
+  #(sept$Date_Time >= "2016-09-28 10:49" & sept$Date_Time <= "2016-09-28 10:55")
+  
+  
+sept[Q3, "Quadrant"] <- "3"
+
+Q4 <-(sept$Date_Time >= "2016-09-28 11:09" & sept$Date_Time <= "2016-09-28 11:16") |
+  (sept$Date_Time >= "2016-09-28 11:26" & sept$Date_Time <= "2016-09-28 11:35") |
+  (sept$Date_Time >= "2016-09-28 11:17" & sept$Date_Time <= "2016-09-28 11:24") |
+  (sept$Date_Time >= "2016-09-29 10:09" & sept$Date_Time <= "2016-09-29 10:16") |
+  (sept$Date_Time >= "2016-09-29 10:00" & sept$Date_Time <= "2016-09-29 10:08") |
+  (sept$Date_Time >= "2016-09-29 09:51" & sept$Date_Time <= "2016-09-29 09:58") |
+  (sept$Date_Time >= "2016-09-30 9:26" & sept$Date_Time <= "2016-09-30 9:33") |
+  (sept$Date_Time >= "2016-09-30 9:17" & sept$Date_Time <= "2016-09-30 9:24") |
+  (sept$Date_Time >= "2016-09-30 9:34" & sept$Date_Time <= "2016-09-30 9:41")
+sept[Q4, "Quadrant"] <- "4"
+
+sept[,"Quadrant"][is.na(sept["Quadrant"])] <- "None"
+
+alltimesept <- sept
+
+# delete pre/post 15 min 
+dy3 <- subset(sept, Date_Time >= "2016-09-28 09:19" & Date_Time <= "2016-09-28 11:50")
+dy4 <- subset(sept, Date_Time >= "2016-09-29 08:36" & Date_Time <= "2016-09-29 10:57")
+dy5 <- subset(sept, Date_Time >= "2016-09-30 08:05" & Date_Time <= "2016-09-30 10:22")
+
+#combine into 1 dataframe again
+sept <- rbind(dy3, dy4, dy5)
+
+######################## COMBINE DATASETS ################
+###########################################################
+# bind all dataframes vertically
+
+junesep <-rbind(june,sept)
+
+#calculate PSD bins 
+junesep$All_psd0.5 <- junesep$All_count0.5 - junesep$All_count1.0
+junesep$All_psd1.0 <- junesep$All_count1.0 - junesep$All_count2.5
+junesep$All_psd2.5 <- junesep$All_count2.5 - junesep$All_count10.0
+junesep$All_psd10.0 <- junesep$All_count10.0
+
+# add general location
+junesep$Location[junesep$Sampler == "A1" | junesep$Sampler == "A2"] <- "A"
+junesep$Location[junesep$Sampler == "B1" | junesep$Sampler == "B2"] <- "B"
+junesep$Location[junesep$Sampler == "C1" | junesep$Sampler == "C2"] <- "C"
+junesep$Location[junesep$Sampler == "D1" | junesep$Sampler == "D2"] <- "D"
+junesep$Location[junesep$Sampler == "E1" | junesep$Sampler == "E2"] <- "E"
+
+#calculate control periods
+cntl_prds <- (junesep$Date_Time < "2016-06-10 10:44 AM" |
+                (junesep$Date_Time > "2016-06-10 12:08 PM" & junesep$Date_Time < "2016-09-28 09:34 AM") |
+                (junesep$Date_Time > "2016-09-28 11:35 AM" & junesep$Date_Time < "2016-09-29 8:51 AM") |
+                (junesep$Date_Time > "2016-09-29 10:42 AM" & junesep$Date_Time < "2016-09-30 8:20 AM") |
+                junesep$Date_Time > "2016-09-30 10:07 AM")  
+junesep$Sprayer[cntl_prds] <- "Control"  
+junesep$Sprayer <- as.factor(junesep$Sprayer)
+junesep$Quadrant[cntl_prds] <- "Control"
+
+junesep$Quadrant <-as.factor(junesep$Quadrant)
+#relevel(junesep$Quadrant, "Control")
+
+junesep$Spraying[junesep$Sprayer == "MFT" | junesep$Sprayer == "AFA" | junesep$Sprayer == "Turbo"] <- 1
+junesep$Spraying[is.na(junesep$Spraying)] <- 0
+
+day1$Sprayer <- as.character(day1$Sprayer)
+
+########################## SET UP MET DATA #############################
+########################################################################
+met_june <- read.csv("Datasets/MetTenSecondData_09-10JUN2016.csv", header = TRUE)
+met_sept <- read.csv("Datasets/TenSecondData_28-30SEPT2016_copy.csv")
+met_sept <- met_sept[-c(1:3),-c(3:5,8,10)]
+
+colnames(met_june) <- c("Date_Time", "Record", "Temp_C", "Wind_Spd_ms", "Wind_Dir_deg")
+colnames(met_sept) <- c("Date_Time", "Record", "Temp_C", "Wind_Spd_ms", "Wind_Dir_deg")
+
+#add sept met data 
+met <- rbind(met_june,met_sept)
+
+#take mean of the data by min
+met$Temp_C <- as.numeric(met$Temp_C)
+
+met$Temp_F <- met$Temp_C*9/5 + 32
+met$Temp_F <- as.numeric(met$Temp_F)
+
+met$Wind_Spd_ms <-as.numeric(met$Wind_Spd_ms)
+
+met$Wind_Spd_MPH <- met$Wind_Spd_ms*2.2369   #/2/15*64  # = 2.13
+met$Wind_Spd_MPH <- as.numeric(met$Wind_Spd_MPH)
+
+met$Wind_Dir_deg <- as.numeric(met$Wind_Dir_deg)
+
+met$Date_Time <- as.POSIXct(met$Date_Time, format = '%m/%d/%y %I:%M %p')
+
+met <- aggregate(data=met, cbind(Temp_C, Temp_F, Wind_Spd_ms, Wind_Spd_MPH, Wind_Dir_deg) 
+                 ~ Date_Time, mean)
+
+#add RH
+rh <- read.csv("Datasets/rh.csv")
+rh$Date_Time <- as.POSIXct(rh$Date_Time, format = '%m/%d/%y %H:%M')
+rh$rh <-as.numeric(rh$rh)
+
+rh$rh[rh$rh <0 | rh$rh >100] <-  NA
+
+met <- merge(met, rh, by="Date_Time" )
+
+met$Wind_Dir_deg <- as.numeric(met$Wind_Dir_deg)
+met$Wind_Dir_card <- as.factor(degToCard(met$Wind_Dir_deg))
+
+# 281.21 (WNW) < "south wind" |  "south wind" < 78.75 (ENE)     # 135˚
+# BLOWS to: ESE - WSW 
+met$southwind <- ifelse(met$Wind_Dir_deg > 281.21 | met$Wind_Dir_deg < 56.25,1,0)
+
+# ####### add min wind data to see if its better than 10-sec (it's not)
+#data from 3 m?
+# min.wind <- read.csv("~/Desktop/min wind.csv")
+
+min.met <- read.csv("Datasets/temp met station MIN data.csv")
+min.met$Date_Time <- as.POSIXct(min.met$Date_Time, format = "%m/%d/%y %H:%M")
+
+min.met$Temp_C[min.met$Temp_C >=100] <- NA
+min.met$WS_ms[min.met$WS_ms >=100] <- NA
+min.met$rh[min.met$rh <0 | min.met$rh >100] <- NA
+
+min.met$Wind_Spd_MPH.min <- min.met$WS_ms *2.23694
+min.met$Temp_F.min <- min.met$Temp_C*9/5+32
+colnames(min.met) <- c("Date_Time", "Temp_C.min", "rh.min", "WS_ms.min", "Wind_Spd_MPH.min", "Temp_F.min")
+
+met <-merge(met, min.met, by= "Date_Time", all = TRUE)
+# met <- met[!names(met) %in% "Date2" ] 
+
+#write.csv(met, paste("/Users/magaliblanco/Everything/School/PhD_UW/Courses/2. Winter 18/ENVH 595 Yost RR/Data/all_day_met.csv")) 
+
+
+############### ADD MET DATA TO junesept ##########################
+#####################################################################
+
+dylos_met <-merge(junesep, met, by= "Date_Time", all = TRUE)
+
+
+dylos_met <- subset(dylos_met, (Date_Time >= "2016-06-10 10:29:00" &
+                                  Date_Time <= "2016-06-10 12:23:00") | 
+                      (Date_Time >= "2016-09-28 09:19" & Date_Time <= "2016-09-28 11:50") |
+                      (Date_Time >= "2016-09-29 08:36" & Date_Time <= "2016-09-29 10:57") |
+                      (Date_Time >= "2016-09-30 08:05" & Date_Time <= "2016-09-30 10:22"))
+
+dylos_met <- dylos_met[-3]
+
+dylos_met_ALLWIND <- dylos_met # had 1166 AFA readings before, then 1028 after eliminating non-southbound wind (11.8% dropped)
+
+#dylos_met_Turbo <- subset(dylos_met, Sampler != "F2" & Sprayer != "None" & southwind ==1)
+dylos_met <- subset(dylos_met, Sampler != "F2"  & Sprayer != "None" & southwind ==1) #& Sprayer != "Turbo"
+
+dylos_met$Height[dylos_met$Sampler =="A2" |dylos_met$Sampler =="B2" | dylos_met$Sampler =="C2" |
+                   dylos_met$Sampler =="D2" |dylos_met$Sampler =="E2"] <- "Above"
+dylos_met$Height[dylos_met$Sampler =="A1" |dylos_met$Sampler =="B1" | dylos_met$Sampler =="C1" |
+                   dylos_met$Sampler =="D1" |dylos_met$Sampler =="E1"] <- "Below"
+
+############### CM3 counts ##########################
+##################################################### 
+dylos_met$All0.5cm3 <- dylos_met$All_count0.5/28316.8
+dylos_met$All1.0cm3 <- dylos_met$All_count1.0/28316.8
+dylos_met$All2.5cm3 <- dylos_met$All_count2.5/28316.8
+dylos_met$All10.0cm3 <- dylos_met$All_count10.0/28316.8
+
+dylos_met$Allpsd0.5cm3 <- dylos_met$All0.5cm3 - dylos_met$All1.0cm3
+dylos_met$Allpsd1.0cm3 <- dylos_met$All1.0cm3 - dylos_met$All2.5cm3
+dylos_met$Allpsd2.5cm3 <- dylos_met$All2.5cm3 - dylos_met$All10.0cm3
+dylos_met$Allpsd10.0cm3 <- dylos_met$All10.0cm3
+
+############### background ##########################
+##################################################### 
+june <- subset(dylos_met, Date == "2016-06-10")
+sept1 <- subset(dylos_met, Date == "2016-09-28")
+sept2 <- subset(dylos_met, Date == "2016-09-29")
+sept3 <- subset(dylos_met, Date == "2016-09-30")
+
+# to use this: make sure there are no missing time values and data is sorted by time
+june$b0.5<-as.numeric(rollapply(june["Allpsd0.5cm3"], 8*9, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+june$b1.0<-as.numeric(rollapply(june["Allpsd1.0cm3"], 8*9, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+june$b2.5<-as.numeric(rollapply(june["Allpsd2.5cm3"], 8*9, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+june$b10.0<-as.numeric(rollapply(june["Allpsd10.0cm3"], 8*9, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+
+june$adj0.5 <- june$Allpsd0.5cm3 - june$b0.5
+june$adj1.0 <- june$Allpsd1.0cm3 - june$b1.0
+june$adj2.5 <- june$Allpsd2.5cm3 - june$b2.5
+june$adj10.0 <- june$Allpsd10.0cm3 - june$b10.0
+
+sept1$b0.5<-as.numeric(rollapply(sept1["Allpsd0.5cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept1$b1.0<-as.numeric(rollapply(sept1["Allpsd1.0cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept1$b2.5<-as.numeric(rollapply(sept1["Allpsd2.5cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept1$b10.0<-as.numeric(rollapply(sept1["Allpsd10.0cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+
+sept1$adj0.5 <- sept1$Allpsd0.5cm3 - sept1$b0.5
+sept1$adj1.0 <- sept1$Allpsd1.0cm3 - sept1$b1.0
+sept1$adj2.5 <- sept1$Allpsd2.5cm3 - sept1$b2.5
+sept1$adj10.0 <- sept1$Allpsd10.0cm3 - sept1$b10.0
+
+
+sept2$b0.5<-as.numeric(rollapply(sept2["Allpsd0.5cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept2$b1.0<-as.numeric(rollapply(sept2["Allpsd1.0cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept2$b2.5<-as.numeric(rollapply(sept2["Allpsd2.5cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept2$b10.0<-as.numeric(rollapply(sept2["Allpsd10.0cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+
+sept2$adj0.5 <- sept2$Allpsd0.5cm3 - sept2$b0.5
+sept2$adj1.0 <- sept2$Allpsd1.0cm3 - sept2$b1.0
+sept2$adj2.5 <- sept2$Allpsd2.5cm3 - sept2$b2.5
+sept2$adj10.0 <- sept2$Allpsd10.0cm3 - sept2$b10.0
+
+sept3$b0.5<-as.numeric(rollapply(sept3["Allpsd0.5cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept3$b1.0<-as.numeric(rollapply(sept3["Allpsd1.0cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept3$b2.5<-as.numeric(rollapply(sept3["Allpsd2.5cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+sept3$b10.0<-as.numeric(rollapply(sept3["Allpsd10.0cm3"], 8*10, FUN = function(x) {
+  quantile(x, probs = 0.05) },fill ="extend",align="center"))
+
+sept3$adj0.5 <- sept3$Allpsd0.5cm3 - sept3$b0.5
+sept3$adj1.0 <- sept3$Allpsd1.0cm3 - sept3$b1.0
+sept3$adj2.5 <- sept3$Allpsd2.5cm3 - sept3$b2.5
+sept3$adj10.0 <- sept3$Allpsd10.0cm3 - sept3$b10.0
+
+dylos_met <- rbind(june, sept1, sept2, sept3)
+
+##### tot adj mass #### 
+# M (ug/m3) = N (#/cm3)* pi/6 * d^3 (um3)* density (g/cm3)      # ?? * 10^-6 (ug/um3)
+
+dylos_met$mass0.5 <- dylos_met$adj0.5 * pi/6 * (sqrt(0.5*1.0))^3 * 1 #* 10^(-6) 
+dylos_met$mass1.0 <- dylos_met$adj1.0 * pi/6 * (sqrt(1.0*2.5))^3 * 1 #* 10^(-6) 
+dylos_met$mass2.5 <- dylos_met$adj2.5 * pi/6 * (sqrt(2.5*10.0))^3 * 1 #* 10^(-6) 
+dylos_met$mass10.0 <- dylos_met$adj10 * pi/6 * (10.0)^3 * 1 #* 10^(-6) 
+dylos_met$mass_sum <- dylos_met$mass0.5 + dylos_met$mass1.0 + dylos_met$mass2.5 + dylos_met$mass10.0 
+
+###### add sprayer distance variable
+
+distance <- read.csv("Datasets/distance.csv")
+distance$Date_Time <- as.POSIXct(distance$Date_Time, format = "%m/%d/%y %H:%M")
+
+dylos_met <- merge(dylos_met, distance, by=c("Date_Time", "Sampler", "Sprayer", "Quadrant"), all=T)
+
+#only include values <= 400    (delete 34 values)
+dylos_met$Distance_ft[dylos_met$Distance_ft>400] <- NA
+
+
+#add distance category
+dylos_met$Distance_category <- dylos_met$Distance_ft
+
+#dylos_met400ftmax <- subset (dylos_met, !is.na(Distance_ft)
+
+dylos_met$Distance_category <- ifelse(dylos_met$Distance_ft <= 100, "100",
+                                      ifelse(dylos_met$Distance_ft > 100 & dylos_met$Distance_ft <=200, "200",
+                                             ifelse(dylos_met$Distance_ft > 200 & dylos_met$Distance_ft <= 300, "300",
+                                                    ifelse(dylos_met$Distance_ft > 300 & dylos_met$Distance_ft <= 400, "400", "NA"))))
+
+dylos_met$Distance_category[dylos_met$Sprayer == "Control" & is.na(dylos_met$Distance_category)] <- "C" 
+#dylos_met$Distance_category[is.na(dylos_met$Distance_category)] <- "Tail" 
+dylos_met$Distance_category <- as.factor(dylos_met$Distance_category)
+
+############################ relevel factors  ###############################
+#######################################################################
+dylos_met$Sprayer <- relevel(dylos_met$Sprayer, "Control")
+dylos_met$Sprayer <- droplevels(dylos_met$Sprayer)
+ 
+################# separate time from date & time ############## 
+
+dylos_met$Time <- format(as.POSIXct(strptime(dylos_met$Date_Time,"%Y-%m-%d %H:%M", tz="")), format = "%H:%M")
+dylos_met$Time <- as.POSIXct(dylos_met$Time, format = "%H:%M")
+
+###################### SAMPLE SIZE #############################
+#######################################################################
+# count_total <- length(dylos_met$Sprayer)   #count_AFA + count_MFT + count_cntl
+# count_AFA <- length(dylos_met$Sprayer[dylos_met$Sprayer=="AFA"])
+# count_MFT <- length(dylos_met$Sprayer[dylos_met$Sprayer=="MFT"])
+# count_cntl <- length(dylos_met$Sprayer[dylos_met$Sprayer=="Control"])
+
+
+```
+
+add AFA.Rmd code; 
+```{r}
+#AFA
+AFA <- subset(dylos_met, Sprayer=="AFA")
+AFA$Event <- ifelse(AFA$Day==2 & AFA$Quadrant==3, 0, ifelse(AFA$Day==2 & AFA$Quadrant==4, 1, ifelse(AFA$Day==2 & AFA$Quadrant==2, 2, ifelse(AFA$Day==2 & AFA$Quadrant==1, 3, ifelse(AFA$Day==3 & AFA$Quadrant==2, 4, ifelse(AFA$Day==3 & AFA$Quadrant==1, 5, ifelse(AFA$Day==3 & AFA$Quadrant==3, 6, ifelse(AFA$Day==3 & AFA$Quadrant==4, 7, ifelse(AFA$Day==4 & AFA$Quadrant==1, 8,ifelse(AFA$Day==4 & AFA$Quadrant==3, 9, ifelse(AFA$Day==4 & AFA$Quadrant==4, 10, ifelse(AFA$Day==4 & AFA$Quadrant==2, 11, ifelse(AFA$Day==5 & AFA$Quadrant==2, 12, ifelse(AFA$Day==5 & AFA$Quadrant==1,13, ifelse(AFA$Day==5 & AFA$Quadrant==4, 14, ifelse(AFA$Day==5 & AFA$Quadrant==3, 15, "Control")))))))))))))))) 
+#MFT
+MFT <- subset(dylos_met, Sprayer=="MFT")
+MFT$Event <- ifelse(MFT$Day==2 & MFT$Quadrant==3, 16, ifelse(MFT$Day==2 & MFT$Quadrant==4, 17, ifelse(MFT$Day==2 & MFT$Quadrant==2, 18, ifelse(MFT$Day==2 & MFT$Quadrant==1, 19, ifelse(MFT$Day==3 & MFT$Quadrant==2, 20, ifelse(MFT$Day==3 & MFT$Quadrant==1, 21, ifelse(MFT$Day==3 & MFT$Quadrant==3, 22, ifelse(MFT$Day==3 & MFT$Quadrant==4, 23, ifelse(MFT$Day==4 & MFT$Quadrant==1, 24,ifelse(MFT$Day==4 & MFT$Quadrant==3, 25, ifelse(MFT$Day==4 & MFT$Quadrant==4, 26, ifelse(MFT$Day==4 & MFT$Quadrant==2, 27, ifelse(MFT$Day==5 & MFT$Quadrant==2, 28, ifelse(MFT$Day==5 & MFT$Quadrant==1,29, ifelse(MFT$Day==5 & MFT$Quadrant==4, 30, ifelse(MFT$Day==5 & MFT$Quadrant==3, 31, "Control")))))))))))))))) 
+#Turbo
+Turbo <- subset(dylos_met, Sprayer=="Turbo")
+Turbo$Event <- ifelse(Turbo$Day==3 & Turbo$Quadrant==2, 32, ifelse(Turbo$Day==3 & Turbo$Quadrant==1, 33, ifelse(Turbo$Day==3 & Turbo$Quadrant==3, 34, ifelse(Turbo$Day==3 & Turbo$Quadrant==4, 35, ifelse(Turbo$Day==4 & Turbo$Quadrant==1, 36,ifelse(Turbo$Day==4 & Turbo$Quadrant==3, 37, ifelse(Turbo$Day==4 & Turbo$Quadrant==4, 38, ifelse(Turbo$Day==4 & Turbo$Quadrant==2, 39, ifelse(Turbo$Day==5 & Turbo$Quadrant==2, 40, ifelse(Turbo$Day==5 & Turbo$Quadrant==1,41, ifelse(Turbo$Day==5 & Turbo$Quadrant==4, 42, ifelse(Turbo$Day==5 & Turbo$Quadrant==3, 43, "Control")))))))))))) 
+#Control
+Control <- subset(dylos_met, Sprayer=="Control")
+Control$Event <- "Control"
+#combine data again
+dylos_met <- rbind(AFA, MFT, Turbo, Control)
+#dylos_met$Event <- as.numeric(dylos_met$Event)
+
+#calculated mean instead of sum of mass_sum ?  #used "sum" before
+events <- aggregate(data=dylos_met, mass_sum~ Date+ Event+ Quadrant+Height+Location+Sprayer, mean) 
+#relabel mass_sum to mean_PMC
+names(events)[names(events)=="mass_sum"] <- "mean_PMC"
+
+#colnames(events) <-c("Date", "Event", "Quadrant", "Height", "Location", "PNC_bin0.5", "PNC_bin1.0", "PNC_bin2.5", "PNC_bin10.0", "PMC_bin0.5", "PMC_bin1.0", "PMC_bin2.5", "PMC_bin10.0", "Event_PMC")
+
+#calculate min/max times for each spray event
+#time.diff <- data.frame(Event=seq(1:15),
+#                        Mins= c(5,6,6,8,8,7,6,8,7,7,6,8,6,7,6))
+
+#import static distances
+dist <- read_excel("~/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R/Datasets/distances.xlsx",col_types = c("numeric", "text", "blank", "blank", "blank", "numeric", "blank"))
+
+dist$Near_Dist_m <- dist$Near_Dist_ft*0.3048
+dist <- dist[!is.na(dist$Quadrant),]
+
+#merge w/ distances
+events <- merge(events, dist[c("Quadrant", "Location", "Near_Dist_m")], all.x=T) #automatically merges by all same columns 
+
+#add avg wind spd data
+wind <- aggregate(data=dylos_met, cbind(Wind_Spd_ms, Wind_Spd_MPH,Wind_Dir_deg) ~ Date+ Event+ Quadrant+  Height+Location, mean)
+
+colnames(wind)<- c("Date", "Event", "Quadrant", "Height", "Location", "Avg_WS_ms", "Avg_WS_mph", "Avg_WD_deg")
+
+events <- merge(events, wind)
+
+#in/out AEZ?
+#events$Near_AEZ <- ifelse(events$Near_Dist_ft <=100, "Inside", "Outside")
+
+#estimate control times
+# events$Mins[events$Event =="Control" &  events$Date== "2016-06-10"] <- length(dylos_met$Date_Time[dylos_met$Event=="Control" & dylos_met$Day==2  & dylos_met$Sampler=="A1"])
+# 
+# events$Mins[events$Event =="Control" &  events$Date== "2016-09-28"] <- length(dylos_met$Date_Time[dylos_met$Event=="Control" & dylos_met$Day==3  & dylos_met$Sampler=="A1"])
+# 
+# events$Mins[events$Event =="Control" &  events$Date== "2016-09-29"] <- length(dylos_met$Date_Time[dylos_met$Event=="Control" & dylos_met$Day==4  & dylos_met$Sampler=="A1"])
+# 
+# events$Mins[events$Event =="Control" &  events$Date== "2016-09-30"] <- length(dylos_met$Date_Time[dylos_met$Event=="Control" & dylos_met$Day==5  & dylos_met$Sampler=="A1"])
+# 
+# #colnames(events)[colnames(events)=="mass_sum"] <- "Event_PMC"
+# events$PMCperMin <- events$Event_PMC / events$Mins
+
+# events$Sprayer <- ifelse(events$Event=="Control", "Control", "AFA")
+# 
+#  events <- events[c("Date", "Event", "Quadrant", "Height", "Location", "Horizontal", "Near_Dist_m",  "Near_AEZ","PNC_bin0.5", "PNC_bin1.0", "PNC_bin2.5", "PNC_bin10.0", "PMC_bin0.5", "PMC_bin1.0", "PMC_bin2.5", "PMC_bin10.0", "Event_PMC", "Mins", "PMCperMin", "Avg_WS_ms", "Avg_WS_mph", "Sprayer")] #"Mid_Dist_m",
+
+events$Near_Dist_Cat_m <- ifelse(events$Near_Dist_m <=33, 33, ifelse(events$Near_Dist_m >33 & events$Near_Dist_m <=53, 53,ifelse(events$Near_Dist_m >53, round(max(dist$Near_Dist_m)), 90)))
+ 
+ events[is.na(events$Near_Dist_Cat_m), "Near_Dist_Cat_m"] <- "Control"
+ #events$Near_Dist_Cat_m <- as.factor(events$Near_Dist_Cat_m)
+ #events$Near_Dist_Cat_m <- relevel(events$Near_Dist_Cat_m, "Control")
+
+events$Near_Dist_Cat_m <- factor(events$Near_Dist_Cat_m, levels = c("33", "53", "74", "Control"))
+
+ #have to change PST to PDT time    ??
+
+#add AgWeather Net Wind Speed data
+AgWeather_WS <- read_excel("~/Everything/School/MS_UW/Courses/Thesis/2.Data/Analysis/R/Datasets/AgWeather WS.xlsx", 
+    col_types = c("blank", "blank", "blank", 
+        "numeric", "numeric", "numeric"))
+names(AgWeather_WS) <- c("Event", "Initial_WS_ms", "Initial_WS_mph")
+
+#AgWeather_WS <- AgWeather_WS[!is.na(AgWeather_WS$Event) & AgWeather_WS$Event !=0, c("InitialWS_mph", "Event")]
+#AgWeather_WS <- AgWeather_WS[c("Event", "InitialWS_mph")]
+
+#keep??
+# AgWeather_WS[length(AgWeather_WS$Event)+1 ,"InitialWS_mph"] <- round(mean(events$Avg_WS_mph[events$Event=="Control"]),1)
+# AgWeather_WS[is.na(AgWeather_WS$Event), "Event"] <- "Control"
+
+#merge initial wind w/event data
+events <- merge(events, AgWeather_WS, all.x = T) #, by="Event", all.x=T)
+events$Event <- as.factor(events$Event)
+events$Height <- as.factor(events$Height)
+# events$Sprayer <- as.factor(events$Sprayer)
+# events$Sprayer <- relevel(events$Sprayer, "Control")
+events$Sprayer <- factor(events$Sprayer, levels = c("Control", "MFT", "Turbo", "AFA"))
+
+#merge minute data w/ initial wind , by "event", all.x=T
+dylos_met <- merge(dylos_met, AgWeather_WS, all.x=T)
+
+#merge minute data w/ near distance, varies by quadrant & location
+# !! using "unique" b/c we were having a merging error before (multiplies dylos_met set by 7-8x)
+dylos_met <- unique(merge(dylos_met, events[c("Quadrant", "Location", "Event", "Near_Dist_m")], all.x=T))
+
+ 
+```
+
+function: distance category
+```{r fn: table PMC.Dist.Cat}
+PMC.Dist.Cat <- function(ht, sprayer){
+#ht <- "Below"
+#sprayer <- "AFA"
+
+ # unique.dist <- unique(events[dist])
+unique.dist <- c("33", "53", "74")
+  
+table1 <- data.frame(Dist_Cat = unique.dist,
+                     Samples = rep(NA, length(unique.dist)),
+                     AM = rep(NA, length(unique.dist)),
+                     ASD = rep(NA, length(unique.dist)),
+                     GM = rep(NA, length(unique.dist)),
+                     GSD = rep(NA, length(unique.dist)))
+
+for (i in 1: length(unique.dist)) {
+ df <- subset(events, Height== ht & events$Sprayer==sprayer & events$Near_Dist_Cat_m==unique.dist[i]) 
+ 
+ table1$Samples[i] <- length(df$mean_PMC)
+ table1$AM[i] <- round(mean(df$mean_PMC),1)
+ table1$ASD[i] <- round(sd(df$mean_PMC),1)
+ table1$GM[i] <-  round(gm(df$mean_PMC),1)
+ table1$GSD[i] <- round(gsd(df$mean_PMC),1)  
+ 
+}
+table1
+ }
+```
+
+# T1. PMC over Near Distance Category - above & below canopy
+-by sprayer
+```{r}
+#estimate control periods
+##above
+length(events[events$Sprayer=="Control" & events$Height=="Above", "mean_PMC"])
+round(mean(events[events$Sprayer=="Control" & events$Height=="Above", "mean_PMC"]),1)
+round(sd(events[events$Sprayer=="Control" & events$Height=="Above", "mean_PMC"]),1)
+round(gm(events[events$Sprayer=="Control" & events$Height=="Above", "mean_PMC"]),1)
+round(gsd(events[events$Sprayer=="Control" & events$Height=="Above", "mean_PMC"]),1)
+
+##below
+length(events[events$Sprayer=="Control" & events$Height=="Below", "mean_PMC"])
+round(mean(events[events$Sprayer=="Control" & events$Height=="Below", "mean_PMC"]),1)
+round(sd(events[events$Sprayer=="Control" & events$Height=="Below", "mean_PMC"]),1)
+round(gm(events[events$Sprayer=="Control" & events$Height=="Below", "mean_PMC"]),1)
+round(gsd(events[events$Sprayer=="Control" & events$Height=="Below", "mean_PMC"]),1)
+
+#spray periods
+##Above
+PMC.Dist.Cat("Above", "AFA")
+PMC.Dist.Cat("Above", "MFT")
+PMC.Dist.Cat("Above", "Turbo")
+##Below
+PMC.Dist.Cat("Below", "AFA")
+PMC.Dist.Cat("Below", "MFT")
+PMC.Dist.Cat("Below", "Turbo")
+
+```
+
+Sample size: one-minute readings: spraying & control periods
+```{r}
+length(dylos_met$Sprayer[dylos_met$Sprayer=="AFA"]) #1028
+length(dylos_met$Sprayer[dylos_met$Sprayer=="AFA" & dylos_met$Height=="Above"]) #493
+length(dylos_met$Sprayer[dylos_met$Sprayer=="AFA" & dylos_met$Height=="Below"]) #535
+
+length(dylos_met$Sprayer[dylos_met$Sprayer=="MFT"]) #1071
+length(dylos_met$Sprayer[dylos_met$Sprayer=="MFT" & dylos_met$Height=="Above"]) #523
+length(dylos_met$Sprayer[dylos_met$Sprayer=="MFT" & dylos_met$Height=="Below"]) #548
+
+length(dylos_met$Sprayer[dylos_met$Sprayer=="Turbo"]) #828
+length(dylos_met$Sprayer[dylos_met$Sprayer=="Turbo" & dylos_met$Height=="Above"]) #388
+length(dylos_met$Sprayer[dylos_met$Sprayer=="Turbo" & dylos_met$Height=="Below"]) #440
+
+length(dylos_met$Sprayer[dylos_met$Sprayer=="Control"]) #849
+length(dylos_met$Sprayer[dylos_met$Sprayer=="Control" & dylos_met$Height=="Below"]) #445
+length(dylos_met$Sprayer[dylos_met$Sprayer=="Control" & dylos_met$Height=="Above"]) #404
+```
+
+# F1: PMC over distance
+```{r, include=F}
+#BW, above
+ggplot(data=events[events$Height=="Above",], aes(x=Near_Dist_Cat_m, y=mean_PMC, fill=Sprayer)) + geom_boxplot() + labs(x= "Receptor Distance (m)", y= expression("PMC (" *mu~"g/"~m^3*")")) + theme_bw() + theme(legend.position = "bottom") + scale_y_log10() + scale_x_discrete(labels=c("Control" = "Control", "33" = "16 - 33", "53" = "34 - 53", "74" = "54 - 74"))  +  scale_fill_grey(start=1.0, end=0.4)  
+#ggsave("Images/Comparison/F1.PMC_above_BW.png", width = 5, height = 4)
+
+#color, above
+ggplot(data=events[events$Height=="Above",], aes(x=Near_Dist_Cat_m, y=mean_PMC, fill=Sprayer)) + geom_boxplot() + labs(x= "Receptor Distance (m)", y= expression("PMC (" *mu~"g/"~m^3*")")) + theme_bw() + theme(legend.position = "bottom") + scale_y_log10() + scale_x_discrete(labels=c("Control" = "Control", "33" = "16 - 33", "53" = "34 - 53", "74" = "54 - 74"))  #+  scale_fill_grey(start=1.0, end=0.4)  
+#ggsave("Images/Comparison/F1.PMC_above_color.png", width = 5, height = 4)
+
+#BW, below
+ggplot(data=events[events$Height=="Below",], aes(x=Near_Dist_Cat_m, y=mean_PMC, fill=Sprayer)) + geom_boxplot() + labs(x= "Receptor Distance (m)", y= expression("PMC (" *mu~"g/"~m^3*")")) + theme_bw() + theme(legend.position = "bottom") + scale_y_log10() + scale_x_discrete(labels=c("Control" = "Control", "33" = "16 - 33", "53" = "34 - 53", "74" = "54 - 74"))  +  scale_fill_grey(start=1.0, end=0.4)  
+#ggsave("Images/Comparison/F1.PMC_below_BW.png", width = 5, height = 4)
+
+#color, below
+ggplot(data=events[events$Height=="Below",], aes(x=Near_Dist_Cat_m, y=mean_PMC, fill=Sprayer)) + geom_boxplot() + labs(x= "Receptor Distance (m)", y= expression("PMC (" *mu~"g/"~m^3*")")) + theme_bw() + theme(legend.position = "bottom") + scale_y_log10() + scale_x_discrete(labels=c("Control" = "Control", "33" = "16 - 33", "53" = "34 - 53", "74" = "54 - 74"))  #+  scale_fill_grey(start=1.0, end=0.4)  
+#ggsave("Images/Comparison/F1.PMC_below_color.png", width = 5, height = 4)
+
+```
+
+#T2. Wind Speed summary
+```{r, include=F}
+ #use AgWeather_WS b/c little diff than using event df; event df may be affected by averaging
+
+summary(AgWeather_WS$Initial_WS_ms[AgWeather_WS$Event >0 & AgWeather_WS$Event <=15])
+summary(AgWeather_WS$Initial_WS_ms[AgWeather_WS$Event >=16 & AgWeather_WS$Event <=31])
+summary(AgWeather_WS$Initial_WS_ms[AgWeather_WS$Event >=32 & AgWeather_WS$Event <=43])
+
+summary(AgWeather_WS$Initial_WS_mph[AgWeather_WS$Event >0 & AgWeather_WS$Event <=15])
+summary(AgWeather_WS$Initial_WS_mph[AgWeather_WS$Event >=16 & AgWeather_WS$Event <=31])
+summary(AgWeather_WS$Initial_WS_mph[AgWeather_WS$Event >=32 & AgWeather_WS$Event <=43])
+ 
+```
+
+# Regression
+## T3a. Full
+75th quantile regression using minute data for: PMC & wind speed
+```{r}
+#using data from all spray periods, not by event (mass_sum, minute WS)
+Full_Fit <- tidy(rq(mass_sum ~ Sprayer + Height + Wind_Spd_ms, tau=0.75, data=dylos_met))
+Full_Fit[2:4] <- round(Full_Fit[2:4],1)
+
+#write_clip(Full_Fit)
+```
+
+##Restricted Analysis
+-static distances
+```{r}
+Dist_Fit <- tidy(rq(mass_sum ~ Sprayer+Height + Wind_Spd_ms + Near_Dist_m  , tau=0.75, data=dylos_met))  
+Dist_Fit[2:4] <- round(Dist_Fit[2:4],1)
+#write_clip(Dist_Fit)
+
+```
+
+
+
